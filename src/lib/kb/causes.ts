@@ -52,37 +52,64 @@ export function uniqueById(reports: Report[]): Report[] {
   return [...new Map(reports.map((r) => [r.id, r])).values()];
 }
 
-export type CauseGroup = {
-  cause: Cause | 'unplaced';
+export type Group<K extends string> = {
+  cause: K | 'unplaced';
   reports: Report[];
   // What intake tagged these reports as: tag → count.
   taggedAs: Record<string, number>;
   tenants: number;
+  tenantHandles: string[];
   firstSeen: string;
   lastSeen: string;
   mergedInto: number[];
 };
 
-export function groupByCause(reports: Report[], tenantOf: (r: Report) => Tenant | undefined): CauseGroup[] {
-  const byCause = new Map<CauseGroup['cause'], Report[]>();
+export type CauseGroup = Group<Cause>;
+
+function groupBy<K extends string>(reports: Report[], classify: (r: Report) => K | null): Group<K>[] {
+  const byCause = new Map<Group<K>['cause'], Report[]>();
   for (const r of reports) {
-    const cause = causeOf(r, tenantOf(r)) ?? 'unplaced';
+    const cause = classify(r) ?? 'unplaced';
     byCause.set(cause, [...(byCause.get(cause) ?? []), r]);
   }
   return [...byCause.entries()]
     .map(([cause, rs]) => {
       const days = rs.map((r) => r.receivedAt.slice(0, 10)).sort();
+      const handles = [...new Set(rs.map((r) => r.tenant))].sort();
       return {
         cause,
         reports: rs,
         taggedAs: rs.reduce<Record<string, number>>((n, r) => ({ ...n, [r.meta.intakeTag]: (n[r.meta.intakeTag] ?? 0) + 1 }), {}),
-        tenants: new Set(rs.map((r) => r.tenant)).size,
+        tenants: handles.length,
+        tenantHandles: handles,
         firstSeen: days[0],
         lastSeen: days[days.length - 1],
         mergedInto: [...new Set(rs.flatMap((r) => (r.mergedInto ? [r.mergedInto] : [])))],
       };
     })
     .sort((a, b) => b.reports.length - a.reports.length);
+}
+
+export function groupByCause(reports: Report[], tenantOf: (r: Report) => Tenant | undefined): CauseGroup[] {
+  return groupBy(reports, (r) => causeOf(r, tenantOf(r)));
+}
+
+// A problem is what engineering fixes. `timezone` reports come from tenants `causeOf` files under
+// `parser`, but the date moved by one day instead of swapping day and month.
+export type Problem = Cause | 'timezone';
+export const PROBLEMS: readonly Problem[] = [...CAUSES, 'timezone'];
+
+export function problemOf(r: Pick<Report, 'id' | 'channel'>, t: Tenant | undefined, oneDayMove: readonly string[]): Problem | null {
+  const cause = causeOf(r, t);
+  return cause && oneDayMove.includes(r.id) ? 'timezone' : cause;
+}
+
+export function groupByProblem(
+  reports: Report[],
+  tenantOf: (r: Report) => Tenant | undefined,
+  oneDayMove: readonly string[],
+): Group<Problem>[] {
+  return groupBy(reports, (r) => problemOf(r, tenantOf(r), oneDayMove));
 }
 
 // A ticket is the cause most of its reports share; the rest were merged into the wrong place.
