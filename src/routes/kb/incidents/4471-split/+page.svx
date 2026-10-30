@@ -1,0 +1,50 @@
+---
+layout: runbook
+title: '#4471 is three problems'
+owner: support desk
+status: draft
+reviewed: 2026-10-30
+signature: Denis Urban
+---
+
+<script>
+  import ProblemSplit from '#lib/kb/ProblemSplit.svelte';
+  import RenderStamp from '#lib/kb/RenderStamp.svelte';
+  import Callout from '#lib/kb/Callout.svelte';
+</script>
+
+[#4471](/kb/incidents/4471) went out as one known issue with one fix queued. Read by tenant and
+by what the reporter saw, its reports are three different bugs. One fix closes one of them.
+
+## Why they were merged
+
+Triage merges on the subject line ([decision 0001](/kb/decisions/0001-dedupe-by-subject)).
+A subject like "Wrong day on the invite" reads the same whatever broke the date, so reports of
+all three landed in one ticket and nobody had to read a body to put them there.
+
+## The three problems
+
+<ProblemSplit ticket={4471} />
+
+- **`parser`**: the shared parser reads every date month first, and every tenant here writes
+  the day first. Day and month swap. Fixed by parsing in the tenant's locale order. This is the
+  fix already queued for #4471.
+- **`hint`**: the booking-v3 form tells people to type MM/DD/YYYY, they do, and the form reads
+  it day first. Only form reports from booking-v3 tenants. Fixed by printing the hint in the
+  tenant's order; the parser fix alone leaves it broken.
+- **`timezone`**: the date moves by one day instead of swapping, depending on where the
+  attendee is. The desk noted these as one-day moves. Fixed by handling time zones when the
+  invite is built; neither fix above touches it.
+
+<Callout kind="warn">
+Count by tenant and by what the reporter saw, not by the intake tag. Intake guesses from the
+reporter's browser, and its guess disagrees with the tenant often enough to move reports from
+one problem to another.
+</Callout>
+
+## Lesson
+
+A matching subject says the symptom is the same, not the bug. Before a big ticket is called
+one issue, split its reports by cause and check the split adds up.
+
+<RenderStamp {signature} />
